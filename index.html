@@ -1,0 +1,254 @@
+<!-- ====== index.html ====== -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=3.0">
+    <title>Trích Xuất ID Hàng Loạt – TikTok, YouTube, Facebook</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, system-ui, sans-serif; }
+        body { background: #0f0f0f; color: #eee; min-height: 100vh; padding: 20px; }
+        .container { max-width: 700px; margin: 0 auto; background: #1a1a1a; border-radius: 24px; padding: 24px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.7); }
+        h2 { text-align: center; font-weight: 600; margin-bottom: 24px; color: #ff3b5c; letter-spacing: 1px; }
+        .tab-bar { display: flex; gap: 4px; margin-bottom: 20px; background: #2a2a2a; border-radius: 14px; padding: 4px; }
+        .tab-btn { flex: 1; padding: 12px 4px; border: none; background: transparent; color: #aaa; border-radius: 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: 0.2s; }
+        .tab-btn.active { background: #ff3b5c; color: #fff; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        label { display: block; font-size: 0.8rem; color: #999; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        textarea { width: 100%; height: 120px; padding: 12px; border: 1px solid #333; border-radius: 14px; background: #0d0d0d; color: #fff; font-size: 0.9rem; outline: none; resize: vertical; margin-bottom: 16px; line-height: 1.5; }
+        textarea:focus { border-color: #ff3b5c; }
+        .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #ff3b5c, #ff2d55); border: none; border-radius: 14px; color: #fff; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.2s; margin-bottom: 12px; }
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled { opacity: 0.5; pointer-events: none; }
+        .results { margin-top: 16px; }
+        .result-item { background: #111; border: 1px solid #2a2a2a; border-radius: 12px; padding: 12px; margin-bottom: 8px; word-break: break-all; font-size: 0.85rem; }
+        .result-item .url { color: #aaa; font-size: 0.75rem; margin-bottom: 4px; }
+        .result-item .id { color: #ff3b5c; font-weight: bold; }
+        .result-item .error { color: #ff4d4d; }
+        .progress { text-align: center; font-size: 0.8rem; color: #888; margin-bottom: 12px; }
+        .note { font-size: 0.7rem; color: #666; margin-top: 12px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🔍 Trích Xuất ID Hàng Loạt</h2>
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="tiktok">TikTok</button>
+            <button class="tab-btn" data-tab="youtube">YouTube</button>
+            <button class="tab-btn" data-tab="facebook">Facebook</button>
+        </div>
+
+        <!-- TikTok Panel -->
+        <div id="panel-tiktok" class="panel active">
+            <label>📋 Danh sách liên kết TikTok (mỗi dòng một URL)</label>
+            <textarea id="tiktok-urls" placeholder="https://www.tiktok.com/@user1&#10;https://www.tiktok.com/@user2&#10;..."></textarea>
+            <button class="btn" id="tiktok-btn" onclick="trichXuatTikTok()">Lấy tất cả ID</button>
+            <div class="progress" id="tiktok-progress"></div>
+            <div class="results" id="tiktok-results"></div>
+        </div>
+
+        <!-- YouTube Panel -->
+        <div id="panel-youtube" class="panel">
+            <label>📋 Danh sách liên kết kênh YouTube (mỗi dòng một URL)</label>
+            <textarea id="youtube-urls" placeholder="https://www.youtube.com/@channel1&#10;https://www.youtube.com/channel/UC...&#10;..."></textarea>
+            <button class="btn" id="youtube-btn" onclick="trichXuatYouTube()">Lấy tất cả Channel ID</button>
+            <div class="progress" id="youtube-progress"></div>
+            <div class="results" id="youtube-results"></div>
+        </div>
+
+        <!-- Facebook Panel -->
+        <div id="panel-facebook" class="panel">
+            <label>📋 Danh sách liên kết Facebook (mỗi dòng một URL)</label>
+            <textarea id="facebook-urls" placeholder="https://www.facebook.com/user1&#10;https://www.facebook.com/profile.php?id=...&#10;..."></textarea>
+            <button class="btn" id="facebook-btn" onclick="trichXuatFacebook()">Lấy tất cả ID số</button>
+            <div class="progress" id="facebook-progress"></div>
+            <div class="results" id="facebook-results"></div>
+        </div>
+        <div class="note">⚡ Dữ liệu được xử lý song song. Mỗi URL gọi qua proxy riêng để tránh 403.</div>
+    </div>
+
+    <script>
+        // Используем собственную serverless-функцию, развёрнутую на том же домене Vercel
+        const PROXY_URL = '/api/proxy?url=';
+
+        // Переключение вкладок
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`panel-${btn.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        // Универсальная функция загрузки HTML через наш прокси
+        async function fetchHTML(url) {
+            const response = await fetch(PROXY_URL + encodeURIComponent(url), {
+                signal: AbortSignal.timeout(15000) // Таймаут 15 секунд на один запрос
+            });
+            if (!response.ok) {
+                // Пытаемся прочитать тело ошибки, но не гарантированно JSON
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP ${response.status}`);
+            }
+            return await response.text();
+        }
+
+        // ====== Парсинг TikTok ID ======
+        function extractTikTokId(html) {
+            let userId = null;
+            // "user":{"id":"число"
+            const re1 = /"user"\s*:\s*\{\s*"id"\s*:\s*"(\d+)"/;
+            const m1 = html.match(re1);
+            if (m1) userId = m1[1];
+            // Альтернатива: "userInfo":{...,"id":"число"
+            if (!userId) {
+                const re2 = /"userInfo":\s*\{[^}]*"id":"(\d+)"/;
+                const m2 = html.match(re2);
+                if (m2) userId = m2[1];
+            }
+            // Запасной вариант: любое поле "id" с длиной >= 8 цифр
+            if (!userId) {
+                const re3 = /"id":"(\d+)"/g;
+                let m;
+                while ((m = re3.exec(html)) !== null) {
+                    if (m[1].length >= 8) {
+                        userId = m[1];
+                        break;
+                    }
+                }
+            }
+            return userId;
+        }
+
+        // ====== Парсинг YouTube Channel ID ======
+        function extractYouTubeId(url, html) {
+            // Если URL уже содержит /channel/UC...
+            const directMatch = url.match(/\/channel\/(UC[\w-]+)/);
+            if (directMatch) return directMatch[1];
+
+            let channelId = null;
+            // "externalId":"UC..."
+            const reExt = /"externalId"\s*:\s*"(UC[\w-]+)"/;
+            const mExt = html.match(reExt);
+            if (mExt) channelId = mExt[1];
+            // Каноническая ссылка
+            if (!channelId) {
+                const reCanon = /<link\s+rel="canonical"\s+href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]+)"/;
+                const mCanon = html.match(reCanon);
+                if (mCanon) channelId = mCanon[1];
+            }
+            // og:url
+            if (!channelId) {
+                const reOg = /<meta\s+property="og:url"\s+content="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]+)"/;
+                const mOg = html.match(reOg);
+                if (mOg) channelId = mOg[1];
+            }
+            // Поиск UC... в JSON
+            if (!channelId) {
+                const reJsonUC = /"UC[\w-]{20,}"/;
+                const mJson = html.match(reJsonUC);
+                if (mJson) channelId = mJson[0].replace(/"/g, '');
+            }
+            return channelId;
+        }
+
+        // ====== Парсинг Facebook ID (числовой) ======
+        function extractFacebookId(html) {
+            let userId = null;
+            // "userID":"число"
+            const reUserID = /"userID"\s*:\s*"(\d+)"/;
+            const mID = html.match(reUserID);
+            if (mID) userId = mID[1];
+            // "profile_id":"число"
+            if (!userId) {
+                const reProf = /"profile_id"\s*:\s*"(\d+)"/;
+                const mProf = html.match(reProf);
+                if (mProf) userId = mProf[1];
+            }
+            // Meta‑тег fb://profile/число
+            if (!userId) {
+                const reMeta = /fb:\/\/profile\/(\d+)/;
+                const mMeta = html.match(reMeta);
+                if (mMeta) userId = mMeta[1];
+            }
+            return userId;
+        }
+
+        // Универсальная функция пакетной обработки
+        async function batchExtract(urls, platform, progressEl, resultsEl) {
+            resultsEl.innerHTML = '';
+            progressEl.textContent = `0/${urls.length}`;
+            const concurrency = 5; // Параллельно не более 5 запросов (чтобы не перегружать прокси)
+            const queue = [...urls];
+            let completed = 0;
+            const workers = Array(concurrency).fill(null).map(async () => {
+                while (queue.length) {
+                    const url = queue.shift();
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'result-item';
+                    resultDiv.innerHTML = `<div class="url">${url}</div><div class="id">⏳ Đang xử lý...</div>`;
+                    resultsEl.appendChild(resultDiv);
+                    try {
+                        const html = await fetchHTML(url);
+                        let id = null;
+                        if (platform === 'tiktok') id = extractTikTokId(html);
+                        else if (platform === 'youtube') id = extractYouTubeId(url, html);
+                        else if (platform === 'facebook') id = extractFacebookId(html);
+
+                        if (id) {
+                            resultDiv.innerHTML = `<div class="url">${url}</div><div class="id">✅ ${id}</div>`;
+                        } else {
+                            resultDiv.innerHTML = `<div class="url">${url}</div><div class="error">❌ Không tìm thấy ID</div>`;
+                        }
+                    } catch (err) {
+                        resultDiv.innerHTML = `<div class="url">${url}</div><div class="error">❌ Lỗi: ${err.message}</div>`;
+                    }
+                    completed++;
+                    progressEl.textContent = `${completed}/${urls.length}`;
+                }
+            });
+            await Promise.allSettled(workers);
+            progressEl.textContent = `Hoàn thành: ${completed}/${urls.length}`;
+        }
+
+        // Обработчики кнопок
+        function trichXuatTikTok() {
+            const textarea = document.getElementById('tiktok-urls');
+            const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u && u.includes('tiktok.com'));
+            if (!urls.length) {
+                alert('Vui lòng nhập ít nhất một liên kết TikTok hợp lệ.');
+                return;
+            }
+            document.getElementById('tiktok-btn').disabled = true;
+            batchExtract(urls, 'tiktok', document.getElementById('tiktok-progress'), document.getElementById('tiktok-results'))
+                .finally(() => { document.getElementById('tiktok-btn').disabled = false; });
+        }
+
+        function trichXuatYouTube() {
+            const textarea = document.getElementById('youtube-urls');
+            const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u && (u.includes('youtube.com') || u.includes('youtu.be')));
+            if (!urls.length) {
+                alert('Vui lòng nhập ít nhất một liên kết YouTube hợp lệ.');
+                return;
+            }
+            document.getElementById('youtube-btn').disabled = true;
+            batchExtract(urls, 'youtube', document.getElementById('youtube-progress'), document.getElementById('youtube-results'))
+                .finally(() => { document.getElementById('youtube-btn').disabled = false; });
+        }
+
+        function trichXuatFacebook() {
+            const textarea = document.getElementById('facebook-urls');
+            const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u && u.includes('facebook.com'));
+            if (!urls.length) {
+                alert('Vui lòng nhập ít nhất một liên kết Facebook hợp lệ.');
+                return;
+            }
+            document.getElementById('facebook-btn').disabled = true;
+            batchExtract(urls, 'facebook', document.getElementById('facebook-progress'), document.getElementById('facebook-results'))
+                .finally(() => { document.getElementById('facebook-btn').disabled = false; });
+        }
+    </script>
+</body>
+  </html>
